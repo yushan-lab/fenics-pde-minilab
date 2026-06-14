@@ -6,6 +6,7 @@ from pathlib import Path
 
 EXPECTED_OUTPUTS = (
     Path("results/poisson_convergence.csv"),
+    Path("results/poisson_error_summary.csv"),
     Path("results/heat_convergence.csv"),
     Path("figures/poisson_solution.png"),
     Path("figures/poisson_error.png"),

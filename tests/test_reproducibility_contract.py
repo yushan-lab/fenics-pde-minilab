@@ -3,7 +3,9 @@ import csv
 import re
 from pathlib import Path
 
+from fenics_pde_minilab.heat import HeatResult, _rows as heat_rows
 from fenics_pde_minilab.poisson import PoissonResult, _rows_with_rates
+from fenics_pde_minilab.poisson import write_poisson_error_summary
 from fenics_pde_minilab.reporting import build_results_summary
 
 
@@ -23,6 +25,44 @@ def test_poisson_rates_are_computed_from_result_errors() -> None:
     assert rows[2]["L2_rate"] == 2.0
     assert rows[1]["H1_rate"] == 1.0
     assert rows[2]["H1_rate"] == 1.0
+
+
+def test_poisson_error_summary_schema_contains_sampled_linf(tmp_path: Path) -> None:
+    result = PoissonResult(
+        degree=2,
+        n=64,
+        h=1.0 / 64.0,
+        l2_error=1.0e-6,
+        h1_seminorm_error=1.0e-4,
+    )
+    path = tmp_path / "poisson_error_summary.csv"
+
+    write_poisson_error_summary(result, 2.0e-6, path)
+
+    rows = list(csv.DictReader(path.open(newline="", encoding="utf-8")))
+    assert rows == [
+        {
+            "degree": "2",
+            "n": "64",
+            "L2_error": "1e-06",
+            "H1_seminorm_error": "0.0001",
+            "sampled_Linf_error": "2e-06",
+        }
+    ]
+
+
+def test_heat_rows_include_adjacent_l2_rates() -> None:
+    rows = heat_rows(
+        [
+            HeatResult(n=8, steps=20, h=1 / 8, dt=0.005, theta=0.5, final_time=0.1, kappa=1.0, final_l2_error=(1 / 8) ** 2),
+            HeatResult(n=16, steps=40, h=1 / 16, dt=0.0025, theta=0.5, final_time=0.1, kappa=1.0, final_l2_error=(1 / 16) ** 2),
+            HeatResult(n=32, steps=80, h=1 / 32, dt=0.00125, theta=0.5, final_time=0.1, kappa=1.0, final_l2_error=(1 / 32) ** 2),
+        ]
+    )
+
+    assert rows[0]["L2_rate"] != rows[0]["L2_rate"]
+    assert rows[1]["L2_rate"] == 2.0
+    assert rows[2]["L2_rate"] == 2.0
 
 
 def test_readme_result_summary_is_driven_by_csv_values(tmp_path: Path) -> None:
@@ -97,6 +137,33 @@ def test_readme_result_summary_is_driven_by_csv_values(tmp_path: Path) -> None:
 def test_solver_sources_use_explicit_quadrature_for_exact_solution_integrals() -> None:
     assert "quadrature_degree" in (ROOT / "src/fenics_pde_minilab/poisson.py").read_text(encoding="utf-8")
     assert "quadrature_degree" in (ROOT / "src/fenics_pde_minilab/heat.py").read_text(encoding="utf-8")
+
+
+def test_poisson_error_plot_uses_dense_exact_sampling_and_writes_summary() -> None:
+    poisson_source = (ROOT / "src/fenics_pde_minilab/poisson.py").read_text(encoding="utf-8")
+    plotting_source = (ROOT / "src/fenics_pde_minilab/plotting.py").read_text(encoding="utf-8")
+
+    assert "_p1_solution_and_error" not in poisson_source
+    assert "dense_grid_scalar_fields_from_dolfinx_function" in poisson_source
+    assert "poisson_error_summary.csv" in poisson_source
+    assert "sampled_Linf_error" in poisson_source
+    assert "compute_collisions_points" in plotting_source
+    assert "function.eval" in plotting_source
+    assert "exact_function(points_xy[:, 0], points_xy[:, 1])" in plotting_source
+
+
+def test_heat_solver_uses_crank_nicolson_refinement_and_rates() -> None:
+    heat_source = (ROOT / "src/fenics_pde_minilab/heat.py").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    method_notes = (ROOT / "docs/method_notes.md").read_text(encoding="utf-8")
+
+    assert "theta: float = 0.5" in heat_source
+    assert "theta * dt * kappa" in heat_source
+    assert "(1.0 - theta) * dt * kappa" in heat_source
+    assert "L2_rate" in heat_source
+    assert "((8, 20), (16, 40), (32, 80), (64, 160))" in heat_source
+    assert "Crank-Nicolson" in readme
+    assert "Crank-Nicolson" in method_notes
 
 
 def test_all_linear_problems_use_current_dolfinx_options_prefix_api() -> None:

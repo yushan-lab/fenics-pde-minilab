@@ -11,10 +11,11 @@ from fenics_pde_minilab.heat import run_heat_convergence
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run heat-equation convergence study.")
-    parser.add_argument("--mesh-sizes", nargs="+", type=int, default=[8, 16, 32])
-    parser.add_argument("--steps", nargs="+", type=int, default=[20, 40, 80])
+    parser.add_argument("--mesh-sizes", nargs="+", type=int, default=[8, 16, 32, 64])
+    parser.add_argument("--steps", nargs="+", type=int, default=[20, 40, 80, 160])
     parser.add_argument("--final-time", type=float, default=0.1)
     parser.add_argument("--kappa", type=float, default=1.0)
+    parser.add_argument("--theta", type=float, default=0.5)
     args = parser.parse_args()
 
     if len(args.mesh_sizes) != len(args.steps):
@@ -26,6 +27,7 @@ def main() -> int:
             cases=tuple(zip(args.mesh_sizes, args.steps, strict=True)),
             final_time=args.final_time,
             kappa=args.kappa,
+            theta=args.theta,
         )
     except RuntimeError as exc:
         print(exc, file=sys.stderr)

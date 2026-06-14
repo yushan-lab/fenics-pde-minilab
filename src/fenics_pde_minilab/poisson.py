@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import math
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -13,8 +14,7 @@ import numpy as np
 from fenics_pde_minilab.backend import require_dolfinx
 from fenics_pde_minilab.errors import convergence_rates, poisson_exact
 from fenics_pde_minilab.plotting import (
-    ScalarField,
-    scalar_field_from_dolfinx_function,
+    dense_grid_scalar_fields_from_dolfinx_function,
     save_poisson_convergence,
     save_scalar_field,
 )
@@ -89,23 +89,6 @@ def solve_poisson_case(n: int, degree: int) -> tuple[PoissonResult, object, obje
     return result, domain, uh
 
 
-def _p1_solution_and_error(domain: object, uh: object) -> tuple[ScalarField, ScalarField]:
-    from dolfinx import fem
-
-    V_plot = fem.functionspace(domain, ("Lagrange", 1))
-    u_plot = fem.Function(V_plot)
-    u_plot.interpolate(uh)
-    solution_field = scalar_field_from_dolfinx_function(u_plot)
-
-    exact_values = poisson_exact(solution_field.points[:, 0], solution_field.points[:, 1])
-    error_field = ScalarField(
-        points=solution_field.points,
-        triangles=solution_field.triangles,
-        values=np.abs(solution_field.values - exact_values),
-    )
-    return solution_field, error_field
-
-
 def _rows_with_rates(results: Iterable[PoissonResult]) -> list[dict[str, float]]:
     rows: list[dict[str, float]] = []
     by_degree: dict[int, list[PoissonResult]] = {}
@@ -141,6 +124,35 @@ def write_poisson_csv(rows: list[dict[str, float]], path: Path) -> None:
         writer.writerows(rows)
 
 
+def write_poisson_error_summary(result: PoissonResult, sampled_linf_error: float, path: Path) -> None:
+    """Write a one-row summary tying the plotted pointwise error to integrated errors."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = ["degree", "n", "L2_error", "H1_seminorm_error", "sampled_Linf_error"]
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow(
+            {
+                "degree": result.degree,
+                "n": result.n,
+                "L2_error": result.l2_error,
+                "H1_seminorm_error": result.h1_seminorm_error,
+                "sampled_Linf_error": sampled_linf_error,
+            }
+        )
+
+
+def warn_if_sampled_linf_implausible(result: PoissonResult, sampled_linf_error: float) -> None:
+    """Warn when the sampled pointwise max is inconsistent with unit-square L2 error."""
+    if sampled_linf_error < result.l2_error:
+        warnings.warn(
+            "sampled_Linf_error is smaller than L2_error on the unit square; "
+            "increase plotting resolution or inspect FEM point evaluation before using the error figure.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+
 def run_poisson_convergence(
     mesh_sizes: Iterable[int] = (8, 16, 32, 64),
     degrees: Iterable[int] = (1, 2),
@@ -149,7 +161,7 @@ def run_poisson_convergence(
 ) -> list[dict[str, float]]:
     """Run the Poisson refinement study and generate CSV/PNG artifacts."""
     results: list[PoissonResult] = []
-    finest_payload: tuple[object, object] | None = None
+    finest_payload: tuple[PoissonResult, object] | None = None
     mesh_sizes = tuple(mesh_sizes)
     degrees = tuple(degrees)
 
@@ -158,14 +170,26 @@ def run_poisson_convergence(
             result, domain, uh = solve_poisson_case(n=n, degree=degree)
             results.append(result)
             if degree == max(degrees) and n == max(mesh_sizes):
-                finest_payload = (domain, uh)
+                finest_payload = (result, uh)
 
     rows = _rows_with_rates(results)
     write_poisson_csv(rows, results_dir / "poisson_convergence.csv")
     save_poisson_convergence(rows, figures_dir / "poisson_convergence.png")
 
     if finest_payload is not None:
-        solution_field, error_field = _p1_solution_and_error(*finest_payload)
+        finest_result, uh = finest_payload
+        plot_resolution = max(257, 4 * finest_result.n + 1)
+        solution_field, error_field, sampled_linf_error = dense_grid_scalar_fields_from_dolfinx_function(
+            uh,
+            poisson_exact,
+            resolution=plot_resolution,
+        )
+        write_poisson_error_summary(
+            finest_result,
+            sampled_linf_error,
+            results_dir / "poisson_error_summary.csv",
+        )
+        warn_if_sampled_linf_implausible(finest_result, sampled_linf_error)
         save_scalar_field(solution_field, figures_dir / "poisson_solution.png", "Poisson solution")
         save_scalar_field(error_field, figures_dir / "poisson_error.png", "Poisson pointwise error", cmap="magma")
 

@@ -32,19 +32,20 @@ u(x, y, 0) = sin(pi x) sin(pi y)
 u_exact(x, y, t) = exp(-2 pi^2 kappa t) sin(pi x) sin(pi y)
 ```
 
-The transient solve uses backward Euler:
+The transient solve uses the theta-method with `theta = 0.5`, which is Crank-Nicolson:
 
 ```text
 integral_Omega u^{m+1} v dx
-+ dt kappa integral_Omega grad(u^{m+1}) . grad(v) dx
++ theta dt kappa integral_Omega grad(u^{m+1}) . grad(v) dx
 = integral_Omega u^m v dx
+- (1 - theta) dt kappa integral_Omega grad(u^m) . grad(v) dx
 ```
 
 ## Refinement And Error Metrics
 
 Poisson runs P1 and P2 Lagrange elements on uniformly refined unit-square triangular meshes. The default mesh sizes are `n = 8, 16, 32, 64`. It writes `results/poisson_convergence.csv` with L2 errors, H1 seminorm errors, and adjacent-grid convergence rates.
 
-Heat runs backward Euler to `T = 0.1` with paired mesh/time refinements. It writes `results/heat_convergence.csv` with final-time L2 errors.
+Heat runs Crank-Nicolson to `T = 0.1` with paired mesh/time refinements. The default cases are `(n, steps) = (8, 20), (16, 40), (32, 80), (64, 160)`. It writes `results/heat_convergence.csv` with final-time L2 errors and adjacent refinement rates.
 
 Expected asymptotic behavior for smooth manufactured solutions:
 
@@ -110,6 +111,7 @@ When the workflow succeeds, download the `fenics-generated-results` artifact fro
 Poisson:
 
 - `results/poisson_convergence.csv`
+- `results/poisson_error_summary.csv`
 - `figures/poisson_solution.png`
 - `figures/poisson_error.png`
 - `figures/poisson_convergence.png`

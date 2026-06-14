@@ -10,14 +10,15 @@ This mini-lab uses manufactured solutions so numerical errors can be measured ag
 - Weak form: integrate `grad(u) . grad(v)` against `f v`.
 - Elements: P1 and P2 Lagrange spaces.
 - Error analysis: assembled L2 error and H1 seminorm error against the exact sine solution, using explicit quadrature metadata for the sinusoidal terms.
-- Visualization: solution and pointwise error from the finest configured P2 case.
+- Visualization: solution and pointwise error from the finest configured P2 case. The pointwise error plot evaluates the numerical finite element function on a dense unit-square plotting grid and compares it directly with the analytic sine exact solution.
 
 ## Heat
 
 - Geometry and boundary conditions match the Poisson problem.
 - Initial condition: `sin(pi x) sin(pi y)`.
-- Time integrator: backward Euler.
+- Time integrator: Crank-Nicolson, implemented as the theta-method with `theta = 0.5`.
 - Default final time: `T = 0.1`.
+- Default refinement protocol: `(n, steps) = (8, 20), (16, 40), (32, 80), (64, 160)`.
 - Error analysis: final-time L2 error against the exact exponentially decaying sine solution, using explicit quadrature metadata for the sinusoidal exact solution.
 - Visualization: initial condition, final numerical solution, final pointwise error, and final-time error trend.
 

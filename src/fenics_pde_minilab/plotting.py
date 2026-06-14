@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -22,8 +23,77 @@ class ScalarField:
     values: np.ndarray
 
 
+ExactFunction = Callable[[np.ndarray, np.ndarray], np.ndarray]
+
+
 def ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def structured_unit_square_triangles(resolution: int) -> np.ndarray:
+    """Return triangles for a regular resolution-by-resolution point grid."""
+    if resolution < 2:
+        raise ValueError("resolution must be at least 2")
+
+    triangles: list[list[int]] = []
+    for j in range(resolution - 1):
+        for i in range(resolution - 1):
+            lower_left = j * resolution + i
+            lower_right = lower_left + 1
+            upper_left = lower_left + resolution
+            upper_right = upper_left + 1
+            triangles.append([lower_left, lower_right, upper_right])
+            triangles.append([lower_left, upper_right, upper_left])
+    return np.asarray(triangles, dtype=int)
+
+
+def dense_grid_scalar_fields_from_dolfinx_function(
+    function: object,
+    exact_function: ExactFunction,
+    *,
+    resolution: int = 257,
+    inset: float = 1.0e-12,
+) -> tuple[ScalarField, ScalarField, float]:
+    """Evaluate a DOLFINx scalar function and exact field on a dense plotting grid."""
+    from dolfinx import geometry
+
+    if resolution < 2:
+        raise ValueError("resolution must be at least 2")
+    if not 0.0 <= inset < 0.5:
+        raise ValueError("inset must lie in [0, 0.5)")
+
+    mesh = function.function_space.mesh
+    coordinates_1d = np.linspace(inset, 1.0 - inset, resolution)
+    grid_x, grid_y = np.meshgrid(coordinates_1d, coordinates_1d, indexing="xy")
+    points_xy = np.column_stack([grid_x.ravel(), grid_y.ravel()])
+    points = np.zeros((points_xy.shape[0], 3), dtype=np.float64)
+    points[:, :2] = points_xy
+
+    tree = geometry.bb_tree(mesh, mesh.topology.dim)
+    candidate_cells = geometry.compute_collisions_points(tree, points)
+    colliding_cells = geometry.compute_colliding_cells(mesh, candidate_cells, points)
+
+    cells = np.empty(points.shape[0], dtype=np.int32)
+    missing = 0
+    for i in range(points.shape[0]):
+        links = colliding_cells.links(i)
+        if len(links) == 0:
+            missing += 1
+            cells[i] = -1
+        else:
+            cells[i] = links[0]
+
+    if missing:
+        raise RuntimeError(f"Could not locate containing cells for {missing} dense-grid point(s).")
+
+    numerical_values = np.asarray(function.eval(points, cells), dtype=float).reshape(points.shape[0], -1)[:, 0]
+    exact_values = np.asarray(exact_function(points_xy[:, 0], points_xy[:, 1]), dtype=float).reshape(-1)
+    error_values = np.abs(numerical_values - exact_values)
+    triangles = structured_unit_square_triangles(resolution)
+
+    solution_field = ScalarField(points=points_xy, triangles=triangles, values=numerical_values)
+    error_field = ScalarField(points=points_xy, triangles=triangles, values=error_values)
+    return solution_field, error_field, float(np.max(error_values))
 
 
 def scalar_field_from_dolfinx_function(function: object) -> ScalarField:

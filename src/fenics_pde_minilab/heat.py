@@ -11,7 +11,7 @@ from typing import Iterable
 import numpy as np
 
 from fenics_pde_minilab.backend import require_dolfinx
-from fenics_pde_minilab.errors import heat_exact
+from fenics_pde_minilab.errors import convergence_rates, heat_exact
 from fenics_pde_minilab.plotting import (
     ScalarField,
     scalar_field_from_dolfinx_function,
@@ -26,6 +26,7 @@ class HeatResult:
     steps: int
     h: float
     dt: float
+    theta: float
     final_time: float
     kappa: float
     final_l2_error: float
@@ -38,8 +39,9 @@ def solve_heat_case(
     degree: int = 1,
     final_time: float = 0.1,
     kappa: float = 1.0,
+    theta: float = 0.5,
 ) -> tuple[HeatResult, object, object, object]:
-    """Solve one backward-Euler heat-equation case."""
+    """Solve one theta-method heat-equation case."""
     require_dolfinx()
 
     import ufl
@@ -51,6 +53,8 @@ def solve_heat_case(
     comm = MPI.COMM_WORLD
     if comm.size != 1:
         raise RuntimeError("These portfolio scripts expect serial execution for plotting.")
+    if not 0.0 <= theta <= 1.0:
+        raise ValueError("theta must lie in [0, 1]")
 
     domain = mesh.create_unit_square(comm, n, n, cell_type=mesh.CellType.triangle)
     V = fem.functionspace(domain, ("Lagrange", degree))
@@ -60,12 +64,13 @@ def solve_heat_case(
     u_old.interpolate(lambda x: heat_exact(x[0], x[1], t=0.0, kappa=kappa))
     initial = fem.Function(V)
     initial.x.array[:] = u_old.x.array
+    initial.x.scatter_forward()
 
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     dx = ufl.Measure("dx", domain=domain, metadata={"quadrature_degree": max(10, 2 * degree + 6)})
-    a = u * v * dx + dt * kappa * ufl.dot(ufl.grad(u), ufl.grad(v)) * dx
-    L = u_old * v * dx
+    a = u * v * dx + theta * dt * kappa * ufl.dot(ufl.grad(u), ufl.grad(v)) * dx
+    L = u_old * v * dx - (1.0 - theta) * dt * kappa * ufl.dot(ufl.grad(u_old), ufl.grad(v)) * dx
 
     fdim = domain.topology.dim - 1
     boundary_facets = mesh.locate_entities_boundary(
@@ -85,6 +90,7 @@ def solve_heat_case(
     for _ in range(steps):
         solution = problem.solve()
         u_old.x.array[:] = solution.x.array
+        u_old.x.scatter_forward()
 
     x = ufl.SpatialCoordinate(domain)
     exact_final = (
@@ -100,6 +106,7 @@ def solve_heat_case(
         steps=steps,
         h=1.0 / float(n),
         dt=dt,
+        theta=theta,
         final_time=final_time,
         kappa=kappa,
         final_l2_error=l2_error,
@@ -125,23 +132,27 @@ def _p1_fields(domain: object, function: object, *, t: float, kappa: float) -> t
 
 
 def _rows(results: Iterable[HeatResult]) -> list[dict[str, float]]:
+    ordered = sorted(results, key=lambda item: item.h, reverse=True)
+    rates = convergence_rates([result.h for result in ordered], [result.final_l2_error for result in ordered])
     return [
         {
             "n": float(result.n),
             "steps": float(result.steps),
             "h": result.h,
             "dt": result.dt,
+            "theta": result.theta,
             "final_time": result.final_time,
             "kappa": result.kappa,
             "final_L2_error": result.final_l2_error,
+            "L2_rate": rate,
         }
-        for result in sorted(results, key=lambda item: item.h, reverse=True)
+        for result, rate in zip(ordered, rates, strict=True)
     ]
 
 
 def write_heat_csv(rows: list[dict[str, float]], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = ["n", "steps", "h", "dt", "final_time", "kappa", "final_L2_error"]
+    fieldnames = ["n", "steps", "h", "dt", "theta", "final_time", "kappa", "final_L2_error", "L2_rate"]
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
@@ -149,11 +160,12 @@ def write_heat_csv(rows: list[dict[str, float]], path: Path) -> None:
 
 
 def run_heat_convergence(
-    cases: Iterable[tuple[int, int]] = ((8, 20), (16, 40), (32, 80)),
+    cases: Iterable[tuple[int, int]] = ((8, 20), (16, 40), (32, 80), (64, 160)),
     *,
     degree: int = 1,
     final_time: float = 0.1,
     kappa: float = 1.0,
+    theta: float = 0.5,
     results_dir: Path = Path("results"),
     figures_dir: Path = Path("figures"),
 ) -> list[dict[str, float]]:
@@ -169,6 +181,7 @@ def run_heat_convergence(
             degree=degree,
             final_time=final_time,
             kappa=kappa,
+            theta=theta,
         )
         results.append(result)
         if n == max(case[0] for case in cases):
