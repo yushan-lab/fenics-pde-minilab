@@ -98,10 +98,26 @@ def test_readme_result_summary_is_driven_by_csv_values(tmp_path: Path) -> None:
             }
         )
 
+    with (results_dir / "poisson_error_summary.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["degree", "n", "L2_error", "H1_seminorm_error", "sampled_Linf_error"],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "degree": "1",
+                "n": "16",
+                "L2_error": "0.01",
+                "H1_seminorm_error": "0.05",
+                "sampled_Linf_error": "0.02",
+            }
+        )
+
     with (results_dir / "heat_convergence.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(
             handle,
-            fieldnames=["n", "steps", "h", "dt", "final_time", "kappa", "final_L2_error"],
+            fieldnames=["n", "steps", "h", "dt", "theta", "final_time", "kappa", "final_L2_error", "L2_rate"],
         )
         writer.writeheader()
         writer.writerow(
@@ -110,9 +126,11 @@ def test_readme_result_summary_is_driven_by_csv_values(tmp_path: Path) -> None:
                 "steps": "20",
                 "h": "0.125",
                 "dt": "0.005",
+                "theta": "0.5",
                 "final_time": "0.1",
                 "kappa": "1.0",
                 "final_L2_error": "0.2",
+                "L2_rate": "nan",
             }
         )
         writer.writerow(
@@ -121,17 +139,39 @@ def test_readme_result_summary_is_driven_by_csv_values(tmp_path: Path) -> None:
                 "steps": "40",
                 "h": "0.0625",
                 "dt": "0.0025",
+                "theta": "0.5",
                 "final_time": "0.1",
                 "kappa": "1.0",
                 "final_L2_error": "0.05",
+                "L2_rate": "2.0",
             }
         )
 
     summary = build_results_summary(results_dir)
 
+    assert "| Element | Finest n | L2 error | H1 seminorm error | Final L2 rate | Final H1 rate |" in summary
     assert "7.125" in summary
     assert "3.5" in summary
+    assert "sampled Linf" in summary
     assert "0.2 to 0.05" in summary
+    assert "| n | Steps | Final-time L2 error | L2 rate |" in summary
+
+
+def test_readme_documents_generated_results_without_pending_language() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "results pending" not in readme.lower()
+    assert "Current observed numerical results: pending" not in readme
+    for figure_path in (
+        "figures/poisson_convergence.png",
+        "figures/poisson_solution.png",
+        "figures/poisson_error.png",
+        "figures/heat_error_trend.png",
+        "figures/heat_initial_condition.png",
+        "figures/heat_final_solution.png",
+        "figures/heat_final_error.png",
+    ):
+        assert figure_path in readme
 
 
 def test_solver_sources_use_explicit_quadrature_for_exact_solution_integrals() -> None:

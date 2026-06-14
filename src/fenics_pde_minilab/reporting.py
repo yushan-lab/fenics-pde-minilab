@@ -19,23 +19,40 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
 def _format_float(value: str) -> str:
     number = float(value)
     if math.isnan(number):
-        return "nan"
+        return "n/a"
     return f"{number:.4g}"
+
+
+def _markdown_table(headers: list[str], rows: list[list[str]]) -> list[str]:
+    lines = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(["---"] * len(headers)) + " |",
+    ]
+    lines.extend("| " + " | ".join(row) + " |" for row in rows)
+    return lines
 
 
 def build_results_summary(results_dir: Path = Path("results")) -> str:
     poisson_path = results_dir / "poisson_convergence.csv"
+    poisson_error_path = results_dir / "poisson_error_summary.csv"
     heat_path = results_dir / "heat_convergence.csv"
     if not poisson_path.exists() or not heat_path.exists():
         return (
-            "Current observed numerical results: pending. Run `make reproduce` in an "
-            "environment with DOLFINx available to generate CSV files, figures, and this summary block."
+            "Generated numerical results are not present in this checkout. Run `make reproduce` in an "
+            "environment with DOLFINx available to regenerate CSV files, figures, and this summary block."
         )
 
     poisson_rows = _read_csv(poisson_path)
     heat_rows = _read_csv(heat_path)
-    lines = ["Observed numerical results from generated CSV files:"]
+    poisson_error_rows = _read_csv(poisson_error_path) if poisson_error_path.exists() else []
+    lines = [
+        "The tables below are read from generated CSV files produced by `scripts/reproduce_all.py`.",
+        "",
+        "Poisson convergence summary:",
+        "",
+    ]
 
+    poisson_table_rows: list[list[str]] = []
     for degree in sorted({row["degree"] for row in poisson_rows}, key=float):
         degree_rows = sorted(
             [row for row in poisson_rows if row["degree"] == degree],
@@ -45,11 +62,52 @@ def build_results_summary(results_dir: Path = Path("results")) -> str:
         finite_rows = [row for row in degree_rows if row["L2_rate"] != "nan" and row["H1_rate"] != "nan"]
         if finite_rows:
             last = finite_rows[-1]
-            lines.append(
-                "- Poisson P"
-                f"{int(float(degree))}: final adjacent L2 rate {_format_float(last['L2_rate'])}, "
-                f"H1 seminorm rate {_format_float(last['H1_rate'])}."
+            poisson_table_rows.append(
+                [
+                    f"P{int(float(degree))}",
+                    str(int(float(last["n"]))),
+                    _format_float(last["L2_error"]),
+                    _format_float(last["H1_seminorm_error"]),
+                    _format_float(last["L2_rate"]),
+                    _format_float(last["H1_rate"]),
+                ]
             )
+
+    lines.extend(
+        _markdown_table(
+            ["Element", "Finest n", "L2 error", "H1 seminorm error", "Final L2 rate", "Final H1 rate"],
+            poisson_table_rows,
+        )
+    )
+    lines.extend(
+        [
+            "",
+            "The Poisson rates are consistent with approximately second-order P1 L2 convergence, "
+            "first-order P1 H1-seminorm convergence, third-order P2 L2 convergence, and "
+            "second-order P2 H1-seminorm convergence.",
+        ]
+    )
+
+    if poisson_error_rows:
+        last_error = poisson_error_rows[-1]
+        lines.extend(
+            [
+                "",
+                "Poisson sampled pointwise error check:",
+                "",
+                *_markdown_table(
+                    ["Element", "n", "L2 error", "sampled Linf error"],
+                    [
+                        [
+                            f"P{int(float(last_error['degree']))}",
+                            str(int(float(last_error["n"]))),
+                            _format_float(last_error["L2_error"]),
+                            _format_float(last_error["sampled_Linf_error"]),
+                        ]
+                    ],
+                ),
+            ]
+        )
 
     if heat_rows:
         ordered_heat_rows = sorted(heat_rows, key=lambda row: float(row["h"]), reverse=True)
@@ -58,19 +116,30 @@ def build_results_summary(results_dir: Path = Path("results")) -> str:
         heat_errors = [float(row["final_L2_error"]) for row in ordered_heat_rows]
         monotone = all(later <= earlier for earlier, later in zip(heat_errors, heat_errors[1:], strict=False))
         direction = "decreased monotonically" if monotone else "did not decrease monotonically"
-        rate_text = ""
-        if "L2_rate" in last and last["L2_rate"] != "nan":
-            rate_text = f" Final adjacent L2 rate: {_format_float(last['L2_rate'])}."
-        lines.append(
-            "- Heat Crank-Nicolson: final-time L2 error "
-            f"{direction} from {_format_float(first['final_L2_error'])} to {_format_float(last['final_L2_error'])} "
-            "over the configured mesh/time refinements."
-            f"{rate_text}"
+        heat_table_rows = [
+            [
+                str(int(float(row["n"]))),
+                str(int(float(row["steps"]))),
+                _format_float(row["final_L2_error"]),
+                _format_float(row.get("L2_rate", "nan")),
+            ]
+            for row in ordered_heat_rows
+        ]
+        lines.extend(
+            [
+                "",
+                "Heat Crank-Nicolson summary:",
+                "",
+                *_markdown_table(["n", "Steps", "Final-time L2 error", "L2 rate"], heat_table_rows),
+                "",
+                f"The final-time L2 error {direction} from {_format_float(first['final_L2_error'])} "
+                f"to {_format_float(last['final_L2_error'])}.",
+            ]
         )
         if not monotone:
             lines.append("- Heat error trend is non-monotone; inspect the CSV before treating it as convergence evidence.")
 
-    lines.append("All numbers in this block are regenerated by `scripts/reproduce_all.py`.")
+    lines.extend(["", "All numbers in this block are regenerated by `scripts/reproduce_all.py`."])
     return "\n".join(lines)
 
 

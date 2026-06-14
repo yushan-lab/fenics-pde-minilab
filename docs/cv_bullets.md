@@ -1,5 +1,5 @@
 # CV Bullets
 
-- Built a compact FEniCSx/DOLFINx finite element mini-lab structure for Poisson and heat-equation verification with Makefile entrypoints and documented DOLFINx/Docker requirements.
-- Implemented manufactured-solution helpers and unit tests for Poisson forcing, heat-equation exact solution decay, and adjacent-grid convergence-rate calculation.
-- Added scripts designed to generate convergence CSV files and Matplotlib figures when run in an environment with DOLFINx available.
+- Built a small controlled FEniCSx/DOLFINx manufactured-solution verification project for Poisson and heat equations with Makefile and GitHub Actions reproduction paths.
+- Generated Poisson P1/P2 convergence CSVs and figures showing approximately second-order P1 L2, first-order P1 H1-seminorm, third-order P2 L2, and second-order P2 H1-seminorm behavior.
+- Implemented a Crank-Nicolson heat-equation refinement study with generated monotone final-time L2 error reduction, output checks, and Matplotlib visualizations.
