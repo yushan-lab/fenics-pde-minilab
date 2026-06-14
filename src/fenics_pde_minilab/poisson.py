@@ -68,6 +68,7 @@ def solve_poisson_case(n: int, degree: int) -> tuple[PoissonResult, object, obje
         L,
         bcs=[bc],
         petsc_options={"ksp_type": "preonly", "pc_type": "lu"},
+        petsc_options_prefix=f"poisson_p{degree}_n{n}_",
     )
     uh = problem.solve()
 

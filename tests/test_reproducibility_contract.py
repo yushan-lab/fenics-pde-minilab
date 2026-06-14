@@ -1,3 +1,4 @@
+import ast
 import csv
 import re
 from pathlib import Path
@@ -96,6 +97,31 @@ def test_readme_result_summary_is_driven_by_csv_values(tmp_path: Path) -> None:
 def test_solver_sources_use_explicit_quadrature_for_exact_solution_integrals() -> None:
     assert "quadrature_degree" in (ROOT / "src/fenics_pde_minilab/poisson.py").read_text(encoding="utf-8")
     assert "quadrature_degree" in (ROOT / "src/fenics_pde_minilab/heat.py").read_text(encoding="utf-8")
+
+
+def test_all_linear_problems_use_current_dolfinx_options_prefix_api() -> None:
+    solver_paths = [
+        ROOT / "src/fenics_pde_minilab/poisson.py",
+        ROOT / "src/fenics_pde_minilab/heat.py",
+    ]
+
+    calls: list[tuple[Path, ast.Call]] = []
+    for path in solver_paths:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "LinearProblem":
+                calls.append((path, node))
+
+    assert calls
+    for path, call in calls:
+        keyword_names = {keyword.arg for keyword in call.keywords}
+        assert "petsc_options" in keyword_names, path
+        assert "petsc_options_prefix" in keyword_names, path
+
+    poisson_source = (ROOT / "src/fenics_pde_minilab/poisson.py").read_text(encoding="utf-8")
+    heat_source = (ROOT / "src/fenics_pde_minilab/heat.py").read_text(encoding="utf-8")
+    assert 'f"poisson_p{degree}_n{n}_"' in poisson_source
+    assert 'f"heat_p{degree}_n{n}_dt{steps}_"' in heat_source
 
 
 def test_readme_figure_paths_are_generated_by_repository_scripts() -> None:

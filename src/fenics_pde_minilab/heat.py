@@ -79,6 +79,7 @@ def solve_heat_case(
         L,
         bcs=[bc],
         petsc_options={"ksp_type": "preonly", "pc_type": "lu"},
+        petsc_options_prefix=f"heat_p{degree}_n{n}_dt{steps}_",
     )
     solution = fem.Function(V)
     for _ in range(steps):

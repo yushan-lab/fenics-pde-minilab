@@ -24,3 +24,5 @@ This mini-lab uses manufactured solutions so numerical errors can be measured ag
 ## Environment Limitation
 
 DOLFINx is not a pure Python dependency and is often unavailable in plain Windows Python environments. The repository therefore keeps pure tests independent of DOLFINx and provides a Docker fallback based on `dolfinx/dolfinx:stable`.
+
+The solver setup targets the current DOLFINx `LinearProblem` API by providing deterministic `petsc_options_prefix` values alongside PETSc solver options.
