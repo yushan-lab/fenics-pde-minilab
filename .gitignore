@@ -13,3 +13,7 @@ results/*.md
 figures/*.png
 !results/.gitkeep
 !figures/.gitkeep
+
+# Local AI agent instructions
+AGENTS.md
+**/AGENTS.md
